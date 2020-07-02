@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -117,6 +118,8 @@ type Controller struct {
 	nextRunAt time.Time
 	// The nextRunAtMux is for atomic updating of nextRunAt
 	nextRunAtMux sync.Mutex
+	// Flag to enable synthesizing set identifiers when using provider that does not persist them
+	SynthesizeSetIdentifiers bool
 }
 
 // RunOnce runs a single iteration of a reconciliation loop.
@@ -139,6 +142,10 @@ func (c *Controller) RunOnce(ctx context.Context) error {
 	}
 	sourceEndpointsTotal.Set(float64(len(endpoints)))
 
+	if c.SynthesizeSetIdentifiers {
+		c.synthesizeSetIdentifiers(endpoints, records)
+	}
+
 	plan := &plan.Plan{
 		Policies:           []plan.Policy{c.Policy},
 		Current:            records,
@@ -158,6 +165,34 @@ func (c *Controller) RunOnce(ctx context.Context) error {
 
 	lastSyncTimestamp.SetToCurrentTime()
 	return nil
+}
+
+// Hack to allow multiple records for same FQDN but different rdata when using providers that don't support
+// record-scoped metadata.  set-identifier allows this, but depends on persisting the value with the DNS record.
+// Instead, scan the endpoints, build a map of record-details to non-empty set-identifier.  Then scan the records, and
+// assign the set-identifiers ephemerally.  This allows plan.Calculate() to successfully determine match the records
+// with their endpoints.
+func (c *Controller) synthesizeSetIdentifiers(endpoints []*endpoint.Endpoint, records []*endpoint.Endpoint) {
+	log.Debugf("scanning for set identifiers in endpoints")
+	setIdentifiers := make(map[string]string)
+	for _, ep := range endpoints {
+		if len(ep.SetIdentifier) > 0 && len(ep.Targets) == 1 {
+			key := fmt.Sprintf("%s/%s/%s", ep.RecordType, ep.DNSName, ep.Targets[0])
+			setIdentifiers[key] = ep.SetIdentifier
+		}
+	}
+	if len(setIdentifiers) > 0 {
+		log.Debugf("found %d set identifiers, scanning records for matches...", len(setIdentifiers))
+		for _, record := range records {
+			key := fmt.Sprintf("%s/%s/%s", record.RecordType, record.DNSName, record.Targets[0])
+			// only assign setIdentifier if record.SetIdentifier is emptpy; we don't want to overwrite any values if
+			// this is accidentally enabled with a provider that *does* persist setIdentifier
+			if setIdentifier, ok := setIdentifiers[key]; ok && len(record.SetIdentifier) == 0 {
+				record.SetIdentifier = setIdentifier
+				log.Debugf("assigned set-identifier %s to record %s", setIdentifier, key)
+			}
+		}
+	}
 }
 
 // MinInterval is used as window for batching events

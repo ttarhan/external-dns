@@ -192,3 +192,26 @@ func TestShouldRunOnce(t *testing.T) {
 	// But not two times
 	assert.False(t, ctrl.ShouldRunOnce(now))
 }
+
+func TestSynthesizeSetIdentifiers(t *testing.T) {
+	ctrl := &Controller{SynthesizeSetIdentifiers: true}
+	fooEndpoint := endpoint.NewEndpoint("foo.com", endpoint.RecordTypeA, "192.0.2.1").WithSetIdentifier("unique")
+	barEndpoint := endpoint.NewEndpoint("bar.com", endpoint.RecordTypeA, "192.0.2.2")
+	endpoints := []*endpoint.Endpoint{fooEndpoint, barEndpoint}
+	fooRecord := endpoint.NewEndpoint("foo.com", endpoint.RecordTypeA, "192.0.2.1")
+	fooTXTRecord := endpoint.NewEndpoint("foo.com", endpoint.RecordTypeTXT, "stuff")
+	barRecord := endpoint.NewEndpoint("bar.com", endpoint.RecordTypeA, "192.0.2.2")
+	records := []*endpoint.Endpoint{fooRecord, fooTXTRecord, barRecord}
+	ctrl.synthesizeSetIdentifiers(endpoints, records)
+	// should only have touched fooRecord
+	if fooRecord.SetIdentifier != fooEndpoint.SetIdentifier {
+		t.Errorf("expected set identifier %s, observed %s", fooEndpoint.SetIdentifier, fooRecord.SetIdentifier)
+	}
+	// should *not* touch fooTXTRecord, or barRecord
+	if fooTXTRecord.SetIdentifier != "" {
+		t.Errorf("expected empty set identifier, observed %s", fooTXTRecord.SetIdentifier)
+	}
+	if barRecord.SetIdentifier != "" {
+		t.Errorf("expected empty set identifier, observed %s", barRecord.SetIdentifier)
+	}
+}

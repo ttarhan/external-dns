@@ -141,6 +141,7 @@ type Config struct {
 	TransIPAccountName                string
 	TransIPPrivateKeyFile             string
 	DigitalOceanAPIPageSize           int
+	SynthesizeSetIdentifiers          bool
 }
 
 var defaultConfig = &Config{
@@ -412,6 +413,7 @@ func (cfg *Config) ParseFlags(args []string) error {
 	app.Flag("log-format", "The format in which log messages are printed (default: text, options: text, json)").Default(defaultConfig.LogFormat).EnumVar(&cfg.LogFormat, "text", "json")
 	app.Flag("metrics-address", "Specify where to serve the metrics and health check endpoint (default: :7979)").Default(defaultConfig.MetricsAddress).StringVar(&cfg.MetricsAddress)
 	app.Flag("log-level", "Set the level of logging. (default: info, options: panic, debug, info, warning, error, fatal").Default(defaultConfig.LogLevel).EnumVar(&cfg.LogLevel, allLogLevelsAsStrings()...)
+	app.Flag("synthesize-set-identifiers", "When enabled, examines endpoints for set-identifiers, and applies them ephemerally to records; allows use of set-identifiers when DNS provider does not persist them").BoolVar(&cfg.SynthesizeSetIdentifiers)
 
 	_, err := app.Parse(args)
 	if err != nil {
