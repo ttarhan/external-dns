@@ -24,7 +24,6 @@ import (
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/pvtz"
 
 	"sigs.k8s.io/external-dns/endpoint"
-
 	"sigs.k8s.io/external-dns/plan"
 )
 
@@ -61,7 +60,7 @@ func (m *MockAlibabaCloudDNSAPI) AddDomainRecord(request *alidns.AddDomainRecord
 		RecordId:   "3",
 		DomainName: request.DomainName,
 		Type:       request.Type,
-		TTL:        ttl,
+		TTL:        int64(ttl),
 		RR:         request.RR,
 		Value:      request.Value,
 	})
@@ -83,7 +82,7 @@ func (m *MockAlibabaCloudDNSAPI) DeleteDomainRecord(request *alidns.DeleteDomain
 }
 
 func (m *MockAlibabaCloudDNSAPI) UpdateDomainRecord(request *alidns.UpdateDomainRecordRequest) (response *alidns.UpdateDomainRecordResponse, err error) {
-	ttl, _ := request.TTL.GetValue()
+	ttl, _ := request.TTL.GetValue64()
 	for i := range m.records {
 		if m.records[i].RecordId == request.RecordId {
 			m.records[i].TTL = ttl
@@ -169,7 +168,7 @@ func (m *MockAlibabaCloudPrivateZoneAPI) AddZoneRecord(request *pvtz.AddZoneReco
 }
 
 func (m *MockAlibabaCloudPrivateZoneAPI) DeleteZoneRecord(request *pvtz.DeleteZoneRecordRequest) (response *pvtz.DeleteZoneRecordResponse, err error) {
-	recordID, _ := request.RecordId.GetValue()
+	recordID, _ := request.RecordId.GetValue64()
 
 	var result []pvtz.Record
 	for _, record := range m.records {
@@ -183,7 +182,7 @@ func (m *MockAlibabaCloudPrivateZoneAPI) DeleteZoneRecord(request *pvtz.DeleteZo
 }
 
 func (m *MockAlibabaCloudPrivateZoneAPI) UpdateZoneRecord(request *pvtz.UpdateZoneRecordRequest) (response *pvtz.UpdateZoneRecordResponse, err error) {
-	recordID, _ := request.RecordId.GetValue()
+	recordID, _ := request.RecordId.GetValue64()
 	ttl, _ := request.Ttl.GetValue()
 	for i := range m.records {
 		if m.records[i].RecordId == recordID {
@@ -277,6 +276,12 @@ func TestAlibabaCloudProvider_Records(t *testing.T) {
 
 func TestAlibabaCloudProvider_ApplyChanges(t *testing.T) {
 	p := newTestAlibabaCloudProvider(false)
+	defaultTtlPlan := &endpoint.Endpoint{
+		DNSName:    "ttl.container-service.top",
+		RecordType: "A",
+		RecordTTL:  defaultAlibabaCloudRecordTTL,
+		Targets:    endpoint.NewTargets("4.3.2.1"),
+	}
 	changes := plan.Changes{
 		Create: []*endpoint.Endpoint{
 			{
@@ -285,6 +290,7 @@ func TestAlibabaCloudProvider_ApplyChanges(t *testing.T) {
 				RecordTTL:  300,
 				Targets:    endpoint.NewTargets("4.3.2.1"),
 			},
+			defaultTtlPlan,
 		},
 		UpdateNew: []*endpoint.Endpoint{
 			{
@@ -309,11 +315,18 @@ func TestAlibabaCloudProvider_ApplyChanges(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to get records: %v", err)
 	} else {
-		if len(endpoints) != 2 {
+		if len(endpoints) != 3 {
 			t.Errorf("Incorrect number of records: %d", len(endpoints))
 		}
 		for _, endpoint := range endpoints {
 			t.Logf("Endpoint for %++v", *endpoint)
+		}
+	}
+	for _, ep := range endpoints {
+		if ep.DNSName == defaultTtlPlan.DNSName {
+			if ep.RecordTTL != defaultTtlPlan.RecordTTL {
+				t.Error("default ttl execute error")
+			}
 		}
 	}
 }
